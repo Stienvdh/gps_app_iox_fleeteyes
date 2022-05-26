@@ -55,6 +55,10 @@ class SerialThread(threading.Thread):
         INTERVAL = 10 # Interval between publishing in seconds
         URL = "https://www.fleeteyes.com/vehicle_update/cad_interface" # URL to post GPS data to
 
+        FE_COMPANY_ID=""
+        FE_USERNAME=""
+        FE_PASSWORD=""
+
         # Set up serial device
         serial_dev = os.getenv("gps1")
         if serial_dev is None:
@@ -76,6 +80,8 @@ class SerialThread(threading.Thread):
         file_handler.setLevel(logging.DEBUG)
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
+
+        logger.info(f"Using serial port: {serial_dev}")
         
         # Main loop
         while True:
@@ -94,35 +100,37 @@ class SerialThread(threading.Thread):
                     quality = sensVal[6]
                     altitude = sensVal[9]
                 elif format == "GPRMC" and sensVal[2] == "A" and quality is not None:
-                    payload = f"""
-                    <?xml version=\"1.0\" encoding=\"ISO-8859-1\"?>
-                    <data>
-                        <company>
-                            <id>{os.environ['FE_COMPANY_ID']}</id>
-                            <username>{os.environ['FE_USERNAME']}</username>
-                            <password>{os.environ['FE_PASSWORD']}</password>
-                        </company>
-                        <vehicles>
-                            <vehicle>
-                                <id>{os.environ["CAF_SYSTEM_NAME"]}</id>
-                                <name>{os.environ["CAF_SYSTEM_NAME"]}</name>
-                                <status>Available</status>
-                                <incidentid></incidentid>
-                                <crew></crew>
-                                <latitude>{("" if sensVal[4]=="N" else "-") + sensVal[3][:2] + "." + sensVal[3][2:4] + sensVal[3][5:]}</latitude>
-                                <longitude>{("" if sensVal[6]=="E" else "-") + sensVal[5][:2] + "." + sensVal[5][2:5] + sensVal[5][6:]}</longitude>
-                                <speed>{float(sensVal[7])}</speed>
-                                <altitude>{altitude}</altitude>
-                                <heading>{sensVal[8]}</heading>
-                            </vehicle>
-                        </vehicles>
-                        <incidents>
-                        </incidents>
-                    </data>
-                    """
+                    payload = "<data>" + \
+                                "<company>"  + \
+                                    f"<id>{FE_COMPANY_ID}</id>"  + \
+                                    f"<username>{FE_USERNAME}</username>"  + \
+                                    f"<password>{FE_PASSWORD}</password>"  + \
+                                "</company>"  + \
+                                "<vehicles>"  + \
+                                    "<vehicle>"  + \
+                                        "<id></id>"  + \
+                                        "<name></name>"  + \
+                                        "<status>Available</status>"  + \
+                                        "<incidentid></incidentid>"  + \
+                                        "<crew></crew>"  + \
+                                        f"<latitude>{('' if sensVal[4]=='N' else '-') + sensVal[3][:2] + '.' + sensVal[3][2:4] + sensVal[3][5:]}</latitude>"  + \
+                                        f"<longitude>{('' if sensVal[6]=='E' else '-') + sensVal[5][1:3] + '.' + sensVal[5][3:5] + sensVal[5][6:]}</longitude>"  + \
+                                        f"<speed>{float(sensVal[7])}</speed>"  + \
+                                        f"<altitude>{altitude}</altitude>"  + \
+                                        f"<heading>{sensVal[8]}</heading>" + \
+                                    "</vehicle>" + \
+                                "</vehicles>" + \
+                                "<incidents>" + \
+                                "</incidents>" + \
+                            "</data>"
+
+                    logger.info(f"Sent to FleetEyes (payload): {payload}")
                     
                     time.sleep(INTERVAL)
-                    requests.post(URL, headers={"Content-Type" : "application/xml"}, data=payload)
+
+                    resp = requests.post(f"{URL}?data={payload}", headers={"Content-Type" : "application/xml"}, data=payload, verify=False)
+                    logger.info(f"Response from FleetEyes (status code): {resp.status_code}")
+                    logger.info(f"Response from FleetEyes (text): {resp.text}")
         sdev.close()
 
 def simple_app(environ, start_response):
